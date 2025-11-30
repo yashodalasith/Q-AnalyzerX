@@ -1,0 +1,61 @@
+<svg viewBox="0 0 900 800" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+        </marker>
+    </defs>
+
+    <!-- Frontend Layer -->
+    <rect x="50" y="50" width="200" height="80" rx="5" fill="#61dafb" stroke="#333" stroke-width="2"/>
+    <text x="150" y="85" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">Frontend</text>
+    <text x="150" y="105" text-anchor="middle" font-family="Arial" font-size="14">Vite</text>
+
+    <!-- API -->
+    <rect x="550" y="50" width="200" height="80" rx="5" fill="#68a063" stroke="#333" stroke-width="2"/>
+    <text x="650" y="85" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">API</text>
+    <text x="650" y="105" text-anchor="middle" font-family="Arial" font-size="14">Node.js</text>
+
+    <!-- Analysis Queue -->
+    <ellipse cx="650" cy="220" rx="80" ry="40" fill="#ff9800" stroke="#333" stroke-width="2"/>
+    <text x="650" y="215" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Analysis</text>
+    <text x="650" y="235" text-anchor="middle" font-family="Arial" font-size="14">Queue</text>
+
+    <!-- Code Analysis Engine -->
+    <rect x="550" y="320" width="200" height="80" rx="5" fill="#009688" stroke="#333" stroke-width="2"/>
+    <text x="650" y="350" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Code Analysis Engine</text>
+    <text x="650" y="370" text-anchor="middle" font-family="Arial" font-size="14">FastAPI</text>
+
+    <!-- Converter Queue -->
+    <ellipse cx="400" cy="490" rx="80" ry="40" fill="#ff9800" stroke="#333" stroke-width="2"/>
+    <text x="400" y="485" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Converter</text>
+    <text x="400" y="505" text-anchor="middle" font-family="Arial" font-size="14">Queue</text>
+
+    <!-- Decision Queue -->
+    <ellipse cx="700" cy="490" rx="80" ry="40" fill="#ff9800" stroke="#333" stroke-width="2"/>
+    <text x="700" y="485" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Decision</text>
+    <text x="700" y="505" text-anchor="middle" font-family="Arial" font-size="14">Queue</text>
+
+    <!-- Arrows -->
+    <!-- Frontend to API (REST) -->
+    <line x1="250" y1="90" x2="550" y2="90" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="400" y="80" text-anchor="middle" font-family="Arial" font-size="12" fill="#666">REST</text>
+
+    <!-- API to Analysis Queue -->
+    <line x1="650" y1="130" x2="650" y2="180" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="670" y="160" text-anchor="start" font-family="Arial" font-size="12" fill="#666">Publish</text>
+
+    <!-- Analysis Queue to Code Analysis Engine -->
+    <line x1="650" y1="260" x2="650" y2="320" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="670" y="295" text-anchor="start" font-family="Arial" font-size="12" fill="#666">Consume</text>
+
+    <!-- Code Analysis Engine to Converter Queue -->
+    <line x1="580" y1="400" x2="450" y2="465" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="505" y="425" text-anchor="middle" font-family="Arial" font-size="12" fill="#666">Publish</text>
+
+    <!-- Code Analysis Engine to Decision Queue -->
+    <line x1="685" y1="400" x2="700" y2="450" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="710" y="430" text-anchor="start" font-family="Arial" font-size="12" fill="#666">Publish</text>
+
+    <!-- Legend -->
+    <text x="50" y="20" font-family="Arial" font-size="18" font-weight="bold">Nexar System Architecture</text>
+</svg>
