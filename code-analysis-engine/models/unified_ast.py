@@ -147,4 +147,4 @@ class UnifiedAST(BaseModel):
         return len(self.get_entangling_gates()) > 0
 
 # Allow forward references
-ASTNode.model_rebuild()
+ASTNode.update_forward_refs() 
