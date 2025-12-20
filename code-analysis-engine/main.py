@@ -60,7 +60,7 @@ async def health_check():
 async def detect_language(submission: CodeSubmission):
     """Detect programming language"""
     try:
-        result = language_detector.detect(submission.code)
+        result = language_detector.detect(code=submission.code, filename=submission.filename)
         return LanguageDetectionResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -75,7 +75,7 @@ async def analyze_code(submission: CodeSubmission):
         code = submission.code
         
         # Step 1: Detect language
-        lang_result = language_detector.detect(code)
+        lang_result = language_detector.detect(code=code, filename=submission.filename)
         
         if not lang_result["is_supported"]:
             raise HTTPException(
