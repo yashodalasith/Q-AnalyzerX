@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any
 import ast
 import re
+from models.unified_ast import ASTNode, NodeType
 
 class BaseParser(ABC):
     """Abstract base class for all code parsers"""
@@ -46,25 +47,32 @@ class BaseParser(ABC):
         lines = [line.strip() for line in code.split('\n')]
         return len([line for line in lines if line and not line.startswith('#')])
     
-    def extract_functions(self, code: str) -> list:
-        """Extract function definitions (works for Python-like syntax)"""
+    from models.unified_ast import ASTNode, NodeType
+
+    def extract_functions(self, code: str) -> list[ASTNode]:
+        """Extract function definitions as ASTNode instances"""
         functions = []
         try:
             tree = ast.parse(code)
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef):
-                    functions.append({
-                        'name': node.name,
-                        'line': node.lineno,
-                        'args': [arg.arg for arg in node.args.args]
-                    })
+                    functions.append(ASTNode(
+                        node_type=NodeType.FUNCTION,
+                        name=node.name,
+                        line_number=node.lineno,
+                        children=[],  # Could later include inner nodes
+                        attributes={'args': [arg.arg for arg in node.args.args]}
+                    ))
         except:
             # Fallback regex for non-Python languages
             pattern = r'(?:def|operation|function)\s+(\w+)\s*\('
             matches = re.finditer(pattern, code)
             for match in matches:
-                functions.append({'name': match.group(1)})
-        
+                functions.append(ASTNode(
+                    node_type=NodeType.FUNCTION,
+                    name=match.group(1)
+                ))
+
         return functions
     
     def count_loops(self, code: str) -> int:

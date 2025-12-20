@@ -15,19 +15,32 @@ class OpenQASMParser(BaseParser):
     def __init__(self):
         super().__init__()
         self.gate_mapping = {
+             # Standard 1-qubit gates
             'h': GateType.H,
             'x': GateType.X,
             'y': GateType.Y,
             'z': GateType.Z,
             's': GateType.S,
             't': GateType.T,
+
+            # Parameterized single-qubit gates
             'rx': GateType.RX,
             'ry': GateType.RY,
             'rz': GateType.RZ,
+            'u1': GateType.RZ,     # equivalent to phase rotation
+            'u2': GateType.CUSTOM, # general-purpose
+            'u3': GateType.CUSTOM,
+
+            # 2-qubit gates
             'cx': GateType.CX,
             'cz': GateType.CZ,
             'swap': GateType.SWAP,
-            'ccx': GateType.TOFFOLI
+            'cp': GateType.CZ,     # controlled-phase
+            'cu1': GateType.CZ,    # controlled-phase (U1)
+
+            # Multi-qubit
+            'ccx': GateType.TOFFOLI,
+            'ccu': GateType.FREDKIN,  # optional - custom
         }
     
     def parse(self, code: str) -> Dict[str, Any]:
@@ -90,7 +103,7 @@ class OpenQASMParser(BaseParser):
         gates = []
         
         # Pattern: gate qreg[index]; or gate qreg1[i], qreg2[j];
-        gate_pattern = r'(\w+)\s+([\w\[\],\s]+);'
+        gate_pattern = r'(\w+)(\([^)]*\))?\s+([\w\[\],\s]+);'
         
         for i, line in enumerate(self.lines):
             # Skip declarations and directives
@@ -102,17 +115,22 @@ class OpenQASMParser(BaseParser):
                 gate_name = match.group(1).lower()
                 
                 if gate_name in self.gate_mapping:
-                    # Parse qubit indices
-                    qubits_str = match.group(2)
+                    gate_type = self.gate_mapping.get(gate_name, GateType.CUSTOM)
+
+                    # Parse parameters
+                    param_str = match.group(2)
+                    parameters = self._parse_parameters(param_str)
+
+                    # Extract qubit indices
+                    qubits_str = match.group(3)
                     qubit_indices = self._extract_qubit_indices(qubits_str)
-                    
-                    gate_type = self.gate_mapping[gate_name]
-                    is_controlled = gate_type in {GateType.CX, GateType.CZ, GateType.TOFFOLI}
-                    
+
+                    is_controlled = gate_name.startswith("c") and len(qubit_indices) > 1
+
                     control_qubits = []
                     target_qubits = qubit_indices
-                    
-                    if is_controlled and len(qubit_indices) > 1:
+
+                    if is_controlled:
                         control_qubits = qubit_indices[:-1]
                         target_qubits = [qubit_indices[-1]]
                     
@@ -121,9 +139,10 @@ class OpenQASMParser(BaseParser):
                         qubits=target_qubits,
                         control_qubits=control_qubits,
                         is_controlled=is_controlled,
-                        line_number=i+1
+                        parameters=parameters,
+                        line_number=i + 1
                     ))
-        
+
         return gates
     
     def extract_measurements(self) -> List[MeasurementNode]:
@@ -152,9 +171,49 @@ class OpenQASMParser(BaseParser):
         return measurements
     
     def _extract_qubit_indices(self, qubits_str: str) -> List[int]:
-        """Extract qubit indices from string like 'q[0], q[1]'"""
+        """
+        Extract qubit indices from strings like:
+            q[0]
+            q[0], q[1]
+            q[0:3]
+            q[1:5:2]
+            q[0], q[2:5]
+        """
         indices = []
-        matches = re.findall(r'\[(\d+)\]', qubits_str)
-        for match in matches:
-            indices.append(int(match))
+        matches = re.findall(r'\[([0-9:]+)\]', qubits_str)
+
+        for m in matches:
+            if ':' in m:
+                # Slice case
+                parts = [int(x) if x else None for x in m.split(':')]
+                start, stop, step = (parts + [None] * 3)[:3]  # pad missing values
+
+                # Generate the expanded slice
+                indices.extend(range(start or 0, stop, step or 1))
+            else:
+                # Single index
+                indices.append(int(m))
+
         return indices
+    
+    def _parse_parameters(self, param_str: str) -> List[float]:
+        """Parse parameters like (pi/2), (theta), (3.14)"""
+        if not param_str:
+            return []
+
+        inside = param_str.strip("()")
+
+        # Replace pi with numeric constant
+        inside = inside.replace("pi", "3.141592653589793")
+
+        # Support lists like (a, b, c)
+        params = []
+        for expr in inside.split(','):
+            expr = expr.strip()
+            try:
+                params.append(float(eval(expr)))
+            except:
+                # Keep symbolic parameters
+                params.append(expr)
+
+        return params
