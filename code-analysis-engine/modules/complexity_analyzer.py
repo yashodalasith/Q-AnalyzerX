@@ -6,14 +6,16 @@ import ast
 import re
 from typing import Dict, Any
 from radon.complexity import cc_visit
-from radon.metrics import mi_visit
 from models.analysis_result import ClassicalComplexity, TimeComplexity
+from modules.accurate_time_complexity import AccurateTimeComplexityAnalyzer
+from modules.space_complexity_analyzer import AccurateSpaceComplexityAnalyzer
 
 class ComplexityAnalyzer:
     """Analyzes classical code complexity"""
     
     def __init__(self):
-        pass
+        self.time_analyzer = AccurateTimeComplexityAnalyzer()
+        self.space_analyzer = AccurateSpaceComplexityAnalyzer()
     
     def analyze(self, code: str, metadata: Dict[str, Any]) -> ClassicalComplexity:
         """
@@ -27,11 +29,13 @@ class ComplexityAnalyzer:
             ClassicalComplexity object
         """
         cyclomatic = self.calculate_cyclomatic_complexity(code)
-        time_complexity = self.estimate_time_complexity(code, metadata)
-        space_complexity = self.estimate_space_complexity(code)
+        cognitive = self.calculate_cognitive_complexity(code)
+        time_complexity = self.time_analyzer.analyze(code)
+        space_complexity = self.space_analyzer.analyze(code)
         
         return ClassicalComplexity(
             cyclomatic_complexity=cyclomatic,
+            cognitive_complexity=cognitive,
             time_complexity=time_complexity,
             space_complexity=space_complexity,
             loop_count=metadata.get('loop_count', 0),
@@ -57,6 +61,21 @@ class ComplexityAnalyzer:
         except:
             # Fallback: manual calculation
             return self._calculate_complexity_manual(code)
+        
+    def calculate_cognitive_complexity(self, code: str) -> int:
+        try:
+            results = cc_visit(code)
+            total = 0
+            for r in results:
+                # r has attribute 'cognitive_complexity'
+                cc = getattr(r, "cognitive_complexity", None)
+                if cc is None:
+                    # fallback: 1 per decision point
+                    cc = 0
+                total += cc
+            return max(total, 1)  # ensure at least 1
+        except:
+            return 1
     
     def _calculate_complexity_manual(self, code: str) -> int:
         """
