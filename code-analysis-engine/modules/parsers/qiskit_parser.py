@@ -1,22 +1,29 @@
 """
-Qiskit Parser - Parses Qiskit quantum circuits
+Qiskit Parser - Parses Qiskit quantum circuits (AST-based, robust)
 """
 import re
 import ast
 from typing import Dict, Any, List
+
 from .base_parser import BaseParser
 from models.unified_ast import (
-    QuantumRegisterNode, ClassicalRegisterNode, 
-    QuantumGateNode, MeasurementNode, GateType
+    QuantumRegisterNode,
+    ClassicalRegisterNode,
+    QuantumGateNode,
+    MeasurementNode,
+    GateType
 )
+
 
 class QiskitParser(BaseParser):
     """Parser for Qiskit code"""
-    
+
     def __init__(self):
         super().__init__()
-        # Map Qiskit gate names to GateType enum
+
+        # Comprehensive gate mapping
         self.gate_mapping = {
+            # Single qubit
             'h': GateType.H,
             'x': GateType.X,
             'y': GateType.Y,
@@ -26,22 +33,41 @@ class QiskitParser(BaseParser):
             'rx': GateType.RX,
             'ry': GateType.RY,
             'rz': GateType.RZ,
+
+            # Two+ qubit
             'cx': GateType.CX,
             'cnot': GateType.CNOT,
             'cz': GateType.CZ,
             'swap': GateType.SWAP,
             'ccx': GateType.TOFFOLI,
             'toffoli': GateType.TOFFOLI,
-            'measure': GateType.MEASURE,
+
+            # Controlled / parameterized
+            'ch': GateType.CH,
+            'cy': GateType.CY,
+            'cp': GateType.CP,
+            'crx': GateType.CRX,
+            'cry': GateType.CRY,
+            'crz': GateType.CRZ,
+            'cswap': GateType.CSWAP,
+            'cu': GateType.CU,
+            'cu1': GateType.CU1,
+            'cu3': GateType.CU3,
+
+            # Other ops
             'barrier': GateType.BARRIER,
-            'reset': GateType.RESET
+            'reset': GateType.RESET,
+            'measure': GateType.MEASURE
         }
-    
+
+    # ------------------------------------------------------------------ #
+    # Main entry
+    # ------------------------------------------------------------------ #
+
     def parse(self, code: str) -> Dict[str, Any]:
-        """Parse Qiskit code"""
         self.code = code
-        self.lines = code.split('\n')
-        
+        self.lines = code.splitlines()
+
         return {
             'imports': self.extract_imports(),
             'registers': self.extract_registers(),
@@ -55,157 +81,172 @@ class QiskitParser(BaseParser):
                 'nesting_depth': self.calculate_nesting_depth(code)
             }
         }
-    
+
+    # ------------------------------------------------------------------ #
+    # Imports
+    # ------------------------------------------------------------------ #
+
     def extract_imports(self) -> List[str]:
-        """Extract Qiskit imports"""
         imports = []
-        import_patterns = [
-            r'from\s+qiskit\s+import\s+(.+)',
+        patterns = [
             r'import\s+qiskit',
-            r'from\s+qiskit\.(\w+)\s+import\s+(.+)'
+            r'from\s+qiskit\s+import\s+.+',
+            r'from\s+qiskit\.\w+\s+import\s+.+'
         ]
-        
         for line in self.lines:
-            for pattern in import_patterns:
-                match = re.search(pattern, line)
-                if match:
-                    imports.append(line.strip())
-                    break
-        
+            if any(re.search(p, line) for p in patterns):
+                imports.append(line.strip())
         return imports
-    
+
+    # ------------------------------------------------------------------ #
+    # Registers (regex is sufficient here)
+    # ------------------------------------------------------------------ #
+
     def extract_registers(self) -> Dict[str, Any]:
-        """Extract quantum and classical register declarations"""
         quantum_regs = []
         classical_regs = []
-        
-        # Pattern: QuantumRegister(size, 'name') or QuantumCircuit(n_qubits, n_bits)
-        qreg_pattern = r'QuantumRegister\s*\(\s*(\d+)(?:\s*,\s*[\'"](\w+)[\'"])?\s*\)'
-        creg_pattern = r'ClassicalRegister\s*\(\s*(\d+)(?:\s*,\s*[\'"](\w+)[\'"])?\s*\)'
-        circuit_pattern = r'QuantumCircuit\s*\(\s*(\d+)(?:\s*,\s*(\d+))?\s*\)'
-        
+
+        qreg_pattern = r'QuantumRegister\s*\(\s*(\d+)(?:\s*,\s*[\'"](\w+)[\'"])?'
+        creg_pattern = r'ClassicalRegister\s*\(\s*(\d+)(?:\s*,\s*[\'"](\w+)[\'"])?'
+        circuit_pattern = r'QuantumCircuit\s*\(\s*(\d+)(?:\s*,\s*(\d+))?'
+
         for i, line in enumerate(self.lines):
-            # Quantum registers
-            qreg_match = re.search(qreg_pattern, line)
-            if qreg_match:
-                size = int(qreg_match.group(1))
-                name = qreg_match.group(2) or f'q{len(quantum_regs)}'
+            if m := re.search(qreg_pattern, line):
                 quantum_regs.append(
-                    QuantumRegisterNode(name=name, size=size, line_number=i+1)
+                    QuantumRegisterNode(
+                        name=m.group(2) or f'q{len(quantum_regs)}',
+                        size=int(m.group(1)),
+                        line_number=i + 1
+                    )
                 )
-            
-            # Classical registers
-            creg_match = re.search(creg_pattern, line)
-            if creg_match:
-                size = int(creg_match.group(1))
-                name = creg_match.group(2) or f'c{len(classical_regs)}'
+
+            if m := re.search(creg_pattern, line):
                 classical_regs.append(
-                    ClassicalRegisterNode(name=name, size=size, line_number=i+1)
+                    ClassicalRegisterNode(
+                        name=m.group(2) or f'c{len(classical_regs)}',
+                        size=int(m.group(1)),
+                        line_number=i + 1
+                    )
                 )
-            
-            # QuantumCircuit shorthand
-            circuit_match = re.search(circuit_pattern, line)
-            if circuit_match:
-                n_qubits = int(circuit_match.group(1))
-                n_bits = int(circuit_match.group(2)) if circuit_match.group(2) else 0
-                
-                if n_qubits > 0:
-                    quantum_regs.append(
-                        QuantumRegisterNode(name='q', size=n_qubits, line_number=i+1)
+
+            if m := re.search(circuit_pattern, line):
+                quantum_regs.append(
+                    QuantumRegisterNode(
+                        name='q',
+                        size=int(m.group(1)),
+                        line_number=i + 1
                     )
-                if n_bits > 0:
+                )
+
+                if m.group(2):
                     classical_regs.append(
-                        ClassicalRegisterNode(name='c', size=n_bits, line_number=i+1)
+                        ClassicalRegisterNode(
+                            name='c',
+                            size=int(m.group(2)),
+                            line_number=i + 1
+                        )
                     )
-        
-        return {
-            'quantum': quantum_regs,
-            'classical': classical_regs
-        }
-    
+
+
+        return {'quantum': quantum_regs, 'classical': classical_regs}
+
+    # ------------------------------------------------------------------ #
+    # AST utilities
+    # ------------------------------------------------------------------ #
+
+    def _is_qubit_like(self, node: ast.AST) -> bool:
+        return isinstance(node, (ast.Constant, ast.Name, ast.Subscript, ast.List, ast.Tuple, ast.Call))
+
+    # ------------------------------------------------------------------ #
+    # Quantum gates (AST-based)
+    # ------------------------------------------------------------------ #
+
     def extract_quantum_operations(self) -> List[QuantumGateNode]:
-        """Extract quantum gate operations"""
         gates = []
-        
-        # Pattern: qc.gate(qubit_index) or qc.gate(control, target)
-        gate_pattern = r'\.(\w+)\s*\(\s*([\d,\s]+)\s*\)'
-        
-        for i, line in enumerate(self.lines):
-            matches = re.finditer(gate_pattern, line)
-            for match in matches:
-                gate_name = match.group(1).lower()
-                
-                if gate_name in self.gate_mapping:
-                    # Parse qubit indices
-                    qubit_str = match.group(2)
-                    qubits = [int(q.strip()) for q in qubit_str.split(',')]
-                    
-                    gate_type = self.gate_mapping[gate_name]
-                    
-                    # Determine if it's a controlled gate
-                    is_controlled = gate_type in {
-                        GateType.CX, GateType.CNOT, GateType.CZ, GateType.TOFFOLI
-                    }
-                    
-                    control_qubits = []
-                    target_qubits = qubits
-                    
-                    if is_controlled and len(qubits) > 1:
-                        control_qubits = qubits[:-1]
-                        target_qubits = [qubits[-1]]
-                    
-                    gates.append(QuantumGateNode(
-                        gate_type=gate_type,
-                        qubits=target_qubits,
-                        control_qubits=control_qubits,
-                        is_controlled=is_controlled,
-                        line_number=i+1
-                    ))
-        
+
+        try:
+            tree = ast.parse(self.code)
+        except SyntaxError:
+            return gates
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+
+            gate_name = node.func.attr.lower()
+            if gate_name not in self.gate_mapping:
+                continue
+
+            qubit_args = [a for a in node.args if self._is_qubit_like(a)]
+            if not qubit_args:
+                continue
+
+            gate_type = self.gate_mapping[gate_name]
+            qubits = list(range(len(qubit_args)))
+
+            controlled_gates = {
+                'ch', 'cy', 'cp', 'crx', 'cry', 'crz',
+                'cswap', 'cu', 'cu1', 'cu3'
+            }
+
+            is_controlled = gate_name in controlled_gates
+            control_qubits = qubits[:-1] if is_controlled else []
+            target_qubits = [qubits[-1]] if is_controlled else qubits
+
+            gates.append(
+                QuantumGateNode(
+                    gate_type=gate_type,
+                    qubits=target_qubits,
+                    control_qubits=control_qubits,
+                    is_controlled=is_controlled,
+                    line_number=node.lineno
+                )
+            )
+
         return gates
-    
+
+    # ------------------------------------------------------------------ #
+    # Measurements (AST-based)
+    # ------------------------------------------------------------------ #
+
     def extract_measurements(self) -> List[MeasurementNode]:
-        """Extract measurement operations"""
         measurements = []
-        
-        # Pattern: qc.measure(qreg, creg) or qc.measure([0,1], [0,1])
-        measure_pattern = r'\.measure\s*\(\s*(.+?)\s*,\s*(.+?)\s*\)'
-        
-        for i, line in enumerate(self.lines):
-            match = re.search(measure_pattern, line)
-            if match:
-                quantum_arg = match.group(1)
-                classical_arg = match.group(2)
-                
-                # Try to parse as indices
-                try:
-                    q_indices = self._parse_indices(quantum_arg)
-                    c_indices = self._parse_indices(classical_arg)
-                    
-                    measurements.append(MeasurementNode(
+
+        try:
+            tree = ast.parse(self.code)
+        except SyntaxError:
+            return measurements
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+
+            name = node.func.attr
+
+            if name == 'measure':
+                measurements.append(
+                    MeasurementNode(
                         quantum_register='q',
                         classical_register='c',
-                        qubit_indices=q_indices,
-                        classical_indices=c_indices,
-                        line_number=i+1
-                    ))
-                except:
-                    # Fallback for named registers
-                    measurements.append(MeasurementNode(
-                        quantum_register=quantum_arg,
-                        classical_register=classical_arg,
                         qubit_indices=[],
                         classical_indices=[],
-                        line_number=i+1
-                    ))
-        
+                        line_number=node.lineno
+                    )
+                )
+
+            elif name == 'measure_all':
+                measurements.append(
+                    MeasurementNode(
+                        quantum_register='ALL',
+                        classical_register='ALL',
+                        qubit_indices=[],
+                        classical_indices=[],
+                        line_number=node.lineno
+                    )
+                )
+
         return measurements
-    
-    def _parse_indices(self, arg: str) -> List[int]:
-        """Parse qubit/bit indices from string"""
-        # Remove brackets and split
-        arg = arg.strip('[]')
-        if ',' in arg:
-            return [int(x.strip()) for x in arg.split(',')]
-        else:
-            return [int(arg)]

@@ -61,16 +61,19 @@ class BaseParser(ABC):
                         name=node.name,
                         line_number=node.lineno,
                         children=[],  # Could later include inner nodes
-                        attributes={'args': [arg.arg for arg in node.args.args]}
+                        attributes={"args": [arg.arg for arg in node.args.args]}
                     ))
-        except:
+        except Exception:
             # Fallback regex for non-Python languages
             pattern = r'(?:def|operation|function)\s+(\w+)\s*\('
             matches = re.finditer(pattern, code)
             for match in matches:
                 functions.append(ASTNode(
                     node_type=NodeType.FUNCTION,
-                    name=match.group(1)
+                    name=match.group(1),
+                    line_number=None,
+                    children=[],
+                    attributes={}
                 ))
 
         return functions

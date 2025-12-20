@@ -5,7 +5,7 @@ import re
 import ast
 from typing import Dict, Any, List
 from .base_parser import BaseParser
-from models.unified_ast import QuantumRegisterNode, QuantumGateNode, GateType
+from models.unified_ast import QuantumRegisterNode, QuantumGateNode, GateType, ASTNode, NodeType
 
 class PythonParser(BaseParser):
     """Parser for plain Python code (non-quantum)"""
@@ -74,7 +74,7 @@ class QSharpParser(BaseParser):
             'registers': self.extract_registers(),
             'gates': self.extract_quantum_operations(),
             'measurements': [],
-            'functions': self.extract_qsharp_operations(),
+            'functions': self.extract_qsharp_functions(),
             'metadata': {
                 'lines_of_code': self.count_lines(code),
                 'loop_count': self.count_loops(code),
@@ -132,6 +132,22 @@ class QSharpParser(BaseParser):
                     ))
         
         return gates
+    
+    def extract_qsharp_functions(self) -> List[ASTNode]:
+        """Extract Q# operation definitions as ASTNode"""
+        functions = []
+        pattern = r'operation\s+(\w+)\s*\('
+
+        for match in re.finditer(pattern, self.code):
+            functions.append(ASTNode(
+                node_type=NodeType.FUNCTION,
+                name=match.group(1),
+                line_number=None,
+                children=[],
+                attributes={"language": "qsharp"}
+            ))
+
+        return functions
     
     def extract_qsharp_operations(self) -> List[Dict]:
         """Extract Q# operation definitions"""

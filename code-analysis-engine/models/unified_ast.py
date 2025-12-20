@@ -45,6 +45,18 @@ class GateType(str, Enum):
     TOFFOLI = "toffoli"
     FREDKIN = "fredkin"
     
+    # Controlled / parameterized
+    CH = "controlled_h"
+    CY = "controlled_y"
+    CP = "controlled_phase"
+    CRX = "controlled_rx"
+    CRY = "controlled_ry"
+    CRZ = "controlled_rz"
+    CU = "controlled_u"
+    CU1 = "controlled_u1"
+    CU3 = "controlled_u3"
+    CSWAP = "controlled_swap"
+    
     # Other
     MEASURE = "measurement"
     BARRIER = "barrier"
