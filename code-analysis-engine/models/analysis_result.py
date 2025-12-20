@@ -65,8 +65,8 @@ class QuantumComplexity(BaseModel):
     has_entanglement: bool = Field(default=False, description="Uses entanglement")
     
     # Resource estimation
-    quantum_volume: Optional[float] = Field(default=None, description="Estimated quantum volume")
-    estimated_runtime_ms: Optional[float] = Field(default=None, description="Estimated runtime")
+    logical_circuit_volume: Optional[float] = Field(default=None, description="Estimated quantum volume")
+    estimated_logical_runtime_ms: Optional[float] = Field(default=None, description="Estimated runtime")
 
 class CodeAnalysisResult(BaseModel):
     """

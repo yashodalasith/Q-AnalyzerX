@@ -55,7 +55,7 @@ class QuantumAnalyzer:
         circuit_depth = self.depth_calculator.calculate_depth(unified_ast)
         
         # Quantum volume estimation
-        quantum_volume = self.estimate_quantum_volume(
+        logical_circuit_volume = self.estimate_logical_circuit_volume(
             unified_ast.total_qubits, circuit_depth
         )
         
@@ -76,8 +76,8 @@ class QuantumAnalyzer:
             entanglement_score=sim_results['entanglement_score'],
             has_superposition=has_superposition,
             has_entanglement=has_entanglement,
-            quantum_volume=quantum_volume,
-            estimated_runtime_ms=estimated_runtime
+            logical_circuit_volume=logical_circuit_volume,
+            estimated_logical_runtime_ms=estimated_runtime
         )
     
     def calculate_superposition_score(self, unified_ast: UnifiedAST) -> float:
@@ -136,7 +136,7 @@ class QuantumAnalyzer:
         
         return max(estimated_depth, total_gates // 3)  # Conservative estimate
     
-    def estimate_quantum_volume(self, n_qubits: int, depth: int) -> float:
+    def estimate_logical_circuit_volume(self, n_qubits: int, depth: int) -> float:
         """
         Estimate quantum volume
         QV = min(n, d)^2 where n=qubits, d=depth

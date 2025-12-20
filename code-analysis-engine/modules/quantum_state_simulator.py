@@ -207,17 +207,19 @@ class QuantumStateSimulator:
     def _apply_cnot(self, control: int, target: int):
         """Apply CNOT (Controlled-X) gate"""
         dim = 2 ** self.num_qubits
-        new_state = np.copy(self.state_vector)
-        
-        # CNOT: if control=1, flip target
+        new_state = np.zeros_like(self.state_vector)
+
         for i in range(dim):
-            # Check if control qubit is 1
+            amp = self.state_vector[i]
+            if abs(amp) < 1e-12:
+                continue
+
             if (i >> (self.num_qubits - 1 - control)) & 1:
-                # Flip target qubit
                 flipped = i ^ (1 << (self.num_qubits - 1 - target))
-                new_state[flipped] = self.state_vector[i]
-                new_state[i] = self.state_vector[i]
-        
+                new_state[flipped] += amp
+            else:
+                new_state[i] += amp
+
         self.state_vector = new_state
     
     def _apply_cz(self, control: int, target: int):
@@ -300,16 +302,16 @@ class QuantumStateSimulator:
         if self.num_qubits < 2:
             return 0.0
         
-        # Calculate purity of first qubit's reduced density matrix
-        # Entanglement present if purity < 1
-        purity = self._calculate_reduced_purity(0)
-        
         # Convert purity to entanglement score
         # Pure state (purity=1) → no entanglement (score=0)
         # Maximally mixed (purity=0.5 for single qubit) → max entanglement (score=1)
-        entanglement_score = 1.0 - purity
-        
-        return min(entanglement_score, 1.0)
+        ent_scores = []
+        for q in range(self.num_qubits):
+            purity = self._calculate_reduced_purity(q)
+            score = (1.0 - purity) / 0.5
+            ent_scores.append(score)
+
+        return min(max(ent_scores), 1.0)
     
     def _calculate_reduced_purity(self, qubit: int) -> float:
         """

@@ -311,6 +311,17 @@ class QuantumAlgorithmMLPipeline:
         y_pred_rf = self.random_forest.predict(self.X_test_scaled)
         y_pred_gb = self.gradient_boosting.predict(self.X_test_scaled)
 
+        # AGREEMENT CHECK
+        agreement = np.mean(y_pred_rf == y_pred_gb)
+        print(f"Model agreement (fraction predictions identical): {agreement:.4f}")
+
+        # PROBABILITY DISTANCE (avg L1 between predicted prob vectors)
+        proba_rf = self.random_forest.predict_proba(self.X_test_scaled)
+        proba_gb = self.gradient_boosting.predict_proba(self.X_test_scaled)
+        avg_proba_l1 = np.mean(np.abs(proba_rf - proba_gb).sum(axis=1))
+        print(f"Avg L1 distance between RF and GB predicted-prob vectors: {avg_proba_l1:.6f}")
+
+
         # ===== TRAINING SET EVALUATION =====
         y_train_pred_rf = self.random_forest.predict(self.X_train_scaled)
         y_train_pred_gb = self.gradient_boosting.predict(self.X_train_scaled)
@@ -330,12 +341,12 @@ class QuantumAlgorithmMLPipeline:
         print("\n📈 TRAINING ACCURACY")
         print(f"Random Forest Train Accuracy: {train_accuracy_rf:.4f}")
         
-        precision, recall, f1, _ = precision_recall_fscore_support(
+        precision_rf, recall_rf, f1_rf, _ = precision_recall_fscore_support(
             self.y_test, y_pred_rf, average='weighted'
         )
-        print(f"Precision: {precision:.4f}")
-        print(f"Recall: {recall:.4f}")
-        print(f"F1 Score: {f1:.4f}")
+        print(f"Precision: {precision_rf:.4f}")
+        print(f"Recall: {recall_rf:.4f}")
+        print(f"F1 Score: {f1_rf:.4f}")
         
         print("\nClassification Report:")
         print(classification_report(y_test_labels, y_pred_rf_labels))
@@ -356,12 +367,12 @@ class QuantumAlgorithmMLPipeline:
         print("\n📈 TRAINING ACCURACY")
         print(f"Gradient Boosting Train Accuracy: {train_accuracy_gb:.4f}")
         
-        precision, recall, f1, _ = precision_recall_fscore_support(
+        precision_gb, recall_gb, f1_gb, _ = precision_recall_fscore_support(
             self.y_test, y_pred_gb, average='weighted'
         )
-        print(f"Precision: {precision:.4f}")
-        print(f"Recall: {recall:.4f}")
-        print(f"F1 Score: {f1:.4f}")
+        print(f"Precision: {precision_gb:.4f}")
+        print(f"Recall: {recall_gb:.4f}")
+        print(f"F1 Score: {f1_gb:.4f}")
         
         print("\nClassification Report:")
         print(classification_report(y_test_labels, y_pred_gb_labels))
@@ -442,15 +453,15 @@ class QuantumAlgorithmMLPipeline:
         return {
             'random_forest': {
                 'accuracy': accuracy_rf,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1
+                'precision': precision_rf,
+                'recall': recall_rf,
+                'f1': f1_rf
             },
             'gradient_boosting': {
                 'accuracy': accuracy_gb,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1
+                'precision': precision_gb,
+                'recall': recall_gb,
+                'f1': f1_gb
             }
         }
     
