@@ -14,6 +14,7 @@ from modules.complexity_analyzer import ComplexityAnalyzer
 from modules.quantum_analyzer import QuantumAnalyzer
 from modules.algorithm_detector import QuantumAlgorithmDetector 
 from models.analysis_result import CodeAnalysisResult, ProblemType, TimeComplexity
+from modules.ml_algorithm_classifier import MLAlgorithmClassifier
 
 app = FastAPI(
     title="Code Analysis Engine",
@@ -27,6 +28,7 @@ ast_builder = ASTBuilder()
 complexity_analyzer = ComplexityAnalyzer()
 quantum_analyzer = QuantumAnalyzer()
 algorithm_detector = QuantumAlgorithmDetector() 
+ml_classifier = MLAlgorithmClassifier()
 
 # Request Models
 class CodeSubmission(BaseModel):
@@ -114,12 +116,22 @@ async def analyze_code(submission: CodeSubmission):
             # - AccurateCircuitDepthCalculator
             # - QuantumStateSimulator
             quantum_metrics = quantum_analyzer.analyze(unified_ast)
+            ml_result = ml_classifier.classify(
+                unified_ast, 
+                quantum_metrics,
+                use_ensemble=True
+            )
             
-            # Use accurate algorithm detector 
-            algorithm_result = algorithm_detector.detect(unified_ast)
-            problem_type = algorithm_result['problem_type']
-            detected_algorithms = algorithm_result['detected_algorithms']
-            algorithm_confidence = algorithm_result['confidence']
+            if ml_result['confidence'] > 0.7:
+                detected_algorithms = [ml_result['algorithm']]
+                problem_type = ml_result['problem_type']
+                algorithm_confidence = ml_result['confidence']
+            else:
+                # Use accurate algorithm detector 
+                algorithm_result = algorithm_detector.detect(unified_ast)
+                problem_type = algorithm_result['problem_type']
+                detected_algorithms = algorithm_result['detected_algorithms']
+                algorithm_confidence = algorithm_result['confidence']
             
             # Fallback to heuristics if algorithm detector has low confidence
             if algorithm_confidence < 0.5:

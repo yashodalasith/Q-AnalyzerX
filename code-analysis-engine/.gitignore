@@ -68,6 +68,12 @@ dmypy.json
 Thumbs.db
 
 # ----------------------------
+#  Datasets / Models
+# ----------------------------
+quantum_algorithms/
+trained/
+
+# ----------------------------
 #  Optional: model / data files
 #  (uncomment if you store training data or ML artifacts)
 # ----------------------------

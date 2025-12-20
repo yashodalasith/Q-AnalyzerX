@@ -15,6 +15,9 @@ class ProblemType(str, Enum):
     FACTORIZATION = "factorization"
     CRYPTOGRAPHY = "cryptography"
     SAMPLING = "sampling"
+    ORACLE_IDENTIFICATION = "oracle_identification"
+    PROPERTY_TESTING = "property_testing"
+    HIDDEN_STRUCTURE = "hidden_structure"
     CLASSICAL = "classical"
     UNKNOWN = "unknown"
 
