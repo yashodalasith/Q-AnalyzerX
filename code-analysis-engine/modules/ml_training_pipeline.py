@@ -7,7 +7,7 @@ import pandas as pd
 import json
 from pathlib import Path
 from typing import List, Dict, Tuple
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score, learning_curve
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import (
@@ -310,6 +310,10 @@ class QuantumAlgorithmMLPipeline:
         # Predictions
         y_pred_rf = self.random_forest.predict(self.X_test_scaled)
         y_pred_gb = self.gradient_boosting.predict(self.X_test_scaled)
+
+        # ===== TRAINING SET EVALUATION =====
+        y_train_pred_rf = self.random_forest.predict(self.X_train_scaled)
+        y_train_pred_gb = self.gradient_boosting.predict(self.X_train_scaled)
         
         # Decode labels
         y_test_labels = self.label_encoder.inverse_transform(self.y_test)
@@ -321,7 +325,10 @@ class QuantumAlgorithmMLPipeline:
         print("-" * 80)
         
         accuracy_rf = accuracy_score(self.y_test, y_pred_rf)
+        train_accuracy_rf = accuracy_score(self.y_train, y_train_pred_rf)
         print(f"Accuracy: {accuracy_rf:.4f} ({accuracy_rf * 100:.2f}%)")
+        print("\n📈 TRAINING ACCURACY")
+        print(f"Random Forest Train Accuracy: {train_accuracy_rf:.4f}")
         
         precision, recall, f1, _ = precision_recall_fscore_support(
             self.y_test, y_pred_rf, average='weighted'
@@ -332,13 +339,22 @@ class QuantumAlgorithmMLPipeline:
         
         print("\nClassification Report:")
         print(classification_report(y_test_labels, y_pred_rf_labels))
-        
+        rf_report = classification_report(
+            y_test_labels, y_pred_rf_labels, output_dict=True
+        )
+
+        with open(self.models_dir / 'classification_report_rf.json', 'w') as f:
+            json.dump(rf_report, f, indent=2)
+
         # ===== GRADIENT BOOSTING EVALUATION =====
         print("\n🚀 GRADIENT BOOSTING")
         print("-" * 80)
         
         accuracy_gb = accuracy_score(self.y_test, y_pred_gb)
+        train_accuracy_gb = accuracy_score(self.y_train, y_train_pred_gb)
         print(f"Accuracy: {accuracy_gb:.4f} ({accuracy_gb * 100:.2f}%)")
+        print("\n📈 TRAINING ACCURACY")
+        print(f"Gradient Boosting Train Accuracy: {train_accuracy_gb:.4f}")
         
         precision, recall, f1, _ = precision_recall_fscore_support(
             self.y_test, y_pred_gb, average='weighted'
@@ -349,7 +365,14 @@ class QuantumAlgorithmMLPipeline:
         
         print("\nClassification Report:")
         print(classification_report(y_test_labels, y_pred_gb_labels))
-        
+
+        gb_report = classification_report(
+            y_test_labels, y_pred_gb_labels, output_dict=True
+        )
+
+        with open(self.models_dir / 'classification_report_gb.json', 'w') as f:
+            json.dump(gb_report, f, indent=2)
+
         # ===== FEATURE IMPORTANCE =====
         print("\n📊 FEATURE IMPORTANCE (Top 10)")
         print("-" * 80)
@@ -362,7 +385,58 @@ class QuantumAlgorithmMLPipeline:
         
         # ===== CONFUSION MATRICES =====
         self._plot_confusion_matrices(y_test_labels, y_pred_rf_labels, y_pred_gb_labels)
-        
+        self._plot_train_confusion_matrices(
+            self.y_train, y_train_pred_rf, y_train_pred_gb
+        )
+
+        # ===== LEARNING CURVES =====
+        self._plot_learning_curve(self.random_forest, 'random_forest')
+        self._plot_learning_curve(self.gradient_boosting, 'gradient_boosting')
+
+        # ===== CONFIDENCE CALIBRATION =====
+        proba_rf = self.random_forest.predict_proba(self.X_test_scaled)
+        confidences = np.max(proba_rf, axis=1)
+        correct = (y_pred_rf == self.y_test).astype(int)
+
+        bins = np.linspace(0, 1, 11)
+        bin_acc = []
+
+        for i in range(len(bins) - 1):
+            mask = (confidences >= bins[i]) & (confidences < bins[i + 1])
+            if mask.any():
+                bin_acc.append(correct[mask].mean())
+            else:
+                bin_acc.append(np.nan)
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(bins[:-1], bin_acc, marker='o')
+        plt.plot([0, 1], [0, 1], '--', color='gray')
+        plt.xlabel('Predicted Confidence')
+        plt.ylabel('Empirical Accuracy')
+        plt.title('Confidence Calibration (Random Forest)')
+        plt.grid(True)
+
+        plt.savefig(self.models_dir / 'confidence_calibration.png', dpi=300)
+        plt.close()
+
+        # ===== DATA SLICE EVALUATION =====
+        gate_counts = self.X_test['total_gates'].values
+        slice_metrics = {}
+
+        for name, mask in {
+            'low_gates': gate_counts < 50,
+            'medium_gates': (gate_counts >= 50) & (gate_counts < 200),
+            'high_gates': gate_counts >= 200
+        }.items():
+            if mask.any():
+                slice_metrics[name] = {
+                    'accuracy': accuracy_score(self.y_test[mask], y_pred_rf[mask]),
+                    'samples': int(mask.sum())
+                }
+
+        with open(self.models_dir / 'data_slice_metrics.json', 'w') as f:
+            json.dump(slice_metrics, f, indent=2)
+
         print("=" * 80)
         
         return {
@@ -406,7 +480,51 @@ class QuantumAlgorithmMLPipeline:
         plt.tight_layout()
         plt.savefig(self.models_dir / 'confusion_matrices.png', dpi=300, bbox_inches='tight')
         print(f"\n📊 Confusion matrices saved to: {self.models_dir / 'confusion_matrices.png'}")
-    
+
+    def _plot_train_confusion_matrices(self, y_train_true, y_train_pred_rf, y_train_pred_gb):
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+        cm_rf = confusion_matrix(y_train_true, y_train_pred_rf)
+        sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues', ax=axes[0],
+                    xticklabels=self.label_encoder.classes_,
+                    yticklabels=self.label_encoder.classes_)
+        axes[0].set_title('Random Forest - TRAIN Confusion Matrix')
+
+        cm_gb = confusion_matrix(y_train_true, y_train_pred_gb)
+        sns.heatmap(cm_gb, annot=True, fmt='d', cmap='Greens', ax=axes[1],
+                    xticklabels=self.label_encoder.classes_,
+                    yticklabels=self.label_encoder.classes_)
+        axes[1].set_title('Gradient Boosting - TRAIN Confusion Matrix')
+
+        plt.tight_layout()
+        plt.savefig(self.models_dir / 'train_confusion_matrices.png', dpi=300)
+
+    def _plot_learning_curve(self, model, model_name):
+        train_sizes, train_scores, val_scores = learning_curve(
+            model,
+            self.X_train_scaled,
+            self.y_train,
+            cv=5,
+            scoring='accuracy',
+            train_sizes=np.linspace(0.1, 1.0, 5),
+            n_jobs=-1
+        )
+
+        train_mean = train_scores.mean(axis=1)
+        val_mean = val_scores.mean(axis=1)
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(train_sizes, train_mean, 'o-', label='Training Accuracy')
+        plt.plot(train_sizes, val_mean, 'o-', label='Validation Accuracy')
+        plt.xlabel('Training Set Size')
+        plt.ylabel('Accuracy')
+        plt.title(f'Learning Curve - {model_name}')
+        plt.legend()
+        plt.grid(True)
+
+        plt.savefig(self.models_dir / f'learning_curve_{model_name}.png', dpi=300)
+        plt.close()
+
     def save_models(self):
         """Save trained models and artifacts"""
         
