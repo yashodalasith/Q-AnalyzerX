@@ -6,6 +6,8 @@ import math
 from typing import Dict, Any
 from models.unified_ast import UnifiedAST, GateType
 from models.analysis_result import QuantumComplexity
+from modules.accurate_circuit_depth import AccurateCircuitDepthCalculator
+from modules.quantum_state_simulator import QuantumStateSimulator
 
 class QuantumAnalyzer:
     """Analyzes quantum circuit complexity"""
@@ -21,6 +23,9 @@ class QuantumAnalyzer:
         self.superposition_gates = {
             GateType.H, GateType.RX, GateType.RY
         }
+
+        self.depth_calculator = AccurateCircuitDepthCalculator()
+        self.simulator = QuantumStateSimulator(max_qubits=15)
     
     def analyze(self, unified_ast: UnifiedAST) -> QuantumComplexity:
         """
@@ -47,12 +52,7 @@ class QuantumAnalyzer:
         has_superposition = unified_ast.has_superposition()
         has_entanglement = unified_ast.has_entanglement()
         
-        # Scores (0.0 to 1.0)
-        superposition_score = self.calculate_superposition_score(unified_ast)
-        entanglement_score = self.calculate_entanglement_score(unified_ast)
-        
-        # Circuit depth (simplified)
-        circuit_depth = self.calculate_circuit_depth(unified_ast)
+        circuit_depth = self.depth_calculator.calculate_depth(unified_ast)
         
         # Quantum volume estimation
         quantum_volume = self.estimate_quantum_volume(
@@ -61,6 +61,7 @@ class QuantumAnalyzer:
         
         # Runtime estimation (simplified)
         estimated_runtime = self.estimate_runtime(unified_ast)
+        sim_results = self.simulator.simulate(unified_ast)
         
         return QuantumComplexity(
             qubits_required=unified_ast.total_qubits,
@@ -71,8 +72,8 @@ class QuantumAnalyzer:
             cx_gate_count=cx_gates,
             cx_gate_ratio=cx_ratio,
             measurement_count=len(unified_ast.measurements),
-            superposition_score=superposition_score,
-            entanglement_score=entanglement_score,
+            superposition_score=sim_results['superposition_score'],
+            entanglement_score=sim_results['entanglement_score'],
             has_superposition=has_superposition,
             has_entanglement=has_entanglement,
             quantum_volume=quantum_volume,
