@@ -33,7 +33,6 @@ ml_classifier = MLAlgorithmClassifier()
 # Request Models
 class CodeSubmission(BaseModel):
     code: str
-    filename: Optional[str] = None
 
 class LanguageDetectionResponse(BaseModel):
     language: str
@@ -65,7 +64,7 @@ async def health_check():
 async def detect_language(submission: CodeSubmission):
     """Detect programming language"""
     try:
-        result = language_detector.detect(code=submission.code, filename=submission.filename)
+        result = language_detector.detect(code=submission.code)
         return LanguageDetectionResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -80,7 +79,7 @@ async def analyze_code(submission: CodeSubmission):
         code = submission.code
         
         # Step 1: Detect language
-        lang_result = language_detector.detect(code=code, filename=submission.filename)
+        lang_result = language_detector.detect(code=code)
         
         if not lang_result["is_supported"]:
             raise HTTPException(
@@ -109,6 +108,7 @@ async def analyze_code(submission: CodeSubmission):
         problem_type = ProblemType.CLASSICAL
         detected_algorithms = []
         algorithm_confidence = 0.0
+        algorithm_detection_source = None
         
         if is_quantum:
             # === QUANTUM ANALYSIS ===
@@ -126,16 +126,19 @@ async def analyze_code(submission: CodeSubmission):
                 detected_algorithms = [ml_result['algorithm']]
                 problem_type = ml_result['problem_type']
                 algorithm_confidence = ml_result['confidence']
+                algorithm_detection_source = "ml"
             else:
                 # Use accurate algorithm detector 
                 algorithm_result = algorithm_detector.detect(unified_ast)
                 problem_type = algorithm_result['problem_type']
                 detected_algorithms = algorithm_result['detected_algorithms']
                 algorithm_confidence = algorithm_result['confidence']
+                algorithm_detection_source = "rule-based"
             
             # Fallback to heuristics if algorithm detector has low confidence
             if algorithm_confidence < 0.5:
                 problem_type = determine_problem_type_heuristic(code, is_quantum=True)
+                algorithm_detection_source = "heuristic"
             
             # analyze classical parts if present (hybrid quantum-classical)
             if metadata['lines_of_code'] > 0 and metadata.get('function_count', 0) > 0:
@@ -157,8 +160,9 @@ async def analyze_code(submission: CodeSubmission):
             classical_metrics=classical_metrics,
             quantum_metrics=quantum_metrics,
             metadata=metadata,
-            detected_algorithms=detected_algorithms,  # NEW
-            algorithm_confidence=algorithm_confidence  # NEW
+            detected_algorithms=detected_algorithms,  
+            algorithm_confidence=algorithm_confidence,
+            algorithm_detection_source=algorithm_detection_source
         )
         
         return result
@@ -219,7 +223,8 @@ def build_analysis_result(
     quantum_metrics,
     metadata: dict,
     detected_algorithms: list = None,
-    algorithm_confidence: float = 0.0
+    algorithm_confidence: float = 0.0,
+    algorithm_detection_source: Optional[str] = None
 ) -> CodeAnalysisResult:
     """Build complete analysis result with accurate metrics"""
     
@@ -309,7 +314,8 @@ def build_analysis_result(
         is_quantum_eligible=is_quantum_eligible,
         confidence_score=confidence,
         analysis_notes=notes,
-        detected_algorithms=detected_algorithms 
+        detected_algorithms=detected_algorithms,
+        algorithm_detection_source=algorithm_detection_source 
     )
 
 def determine_quantum_time_complexity(

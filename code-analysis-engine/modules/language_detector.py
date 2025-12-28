@@ -19,9 +19,8 @@ class LanguageDetector:
     """
     Extremely accurate language detector for quantum languages.
     Uses multi-stage scoring:
-        1. File extension scoring
-        2. Keyword signature scoring
-        3. Syntax/token heuristics
+        1. Keyword signature scoring
+        2. Syntax/token heuristics
     """
 
     def __init__(self):
@@ -71,25 +70,39 @@ class LanguageDetector:
                 r'\bimport\s+cirq\b',
                 r'\bfrom\s+cirq\s+import\b',
 
-                # Core types
-                r'\bcirq\.Circuit\b',
-                r'\bcirq\.LineQubit\b',
-                r'\bcirq\.GridQubit\b',
+                # Qubit types (very strong)
+                r'\bcirq\.LineQubit\.range\s*\(',
+                r'\bcirq\.LineQubit\s*\(',
+                r'\bcirq\.GridQubit\s*\(',
+                r'\bcirq\.NamedQubit\s*\(',
 
-                # Gates
-                r'\bcirq\.H\b',
-                r'\bcirq\.X\b',
-                r'\bcirq\.Y\b',
-                r'\bcirq\.Z\b',
-                r'\bcirq\.CX\b',
-                r'\bcirq\.CNOT\b',
+                # Circuit construction
+                r'\bcirq\.Circuit\s*\(',
+                r'\bcirq\.Moment\s*\(',
 
-                # Measurement
-                r'\bcirq\.measure\b',
+                # Gates (Cirq-style)
+                r'\bcirq\.(H|X|Y|Z)\s*\(',
+                r'\bcirq\.(CX|CZ|CNOT)\s*\(',
 
-                # Cirq moments / ops
-                r'\bcirq\.Moment\b',
-                r'\bcirq\.GateOperation\b'
+                # Exponentiated gates (EXTREMELY strong)
+                r'\bcirq\.[A-Za-z]+\s*\(.*\)\s*\*\*\s*[0-9.]+',
+
+                # Measurement (with optional key)
+                r'\bcirq\.measure\s*\(',
+
+                # Simulation / execution
+                r'\bcirq\.Simulator\s*\(',
+                r'\bcirq\.DensityMatrixSimulator\s*\(',
+                r'\bsim\.run\s*\(',
+                r'\bsim\.simulate\s*\(',
+
+                # Results
+                r'\bresult\.histogram\s*\(',
+                r'\bresult\.measurements\b',
+
+                # Parameters
+                r'\bcirq\.Symbol\s*\(',
+                r'\bcirq\.ParamResolver\s*\(',
             ],
 
             # ==============================================================
@@ -165,116 +178,85 @@ class LanguageDetector:
             ]
         }
 
-
-        # File extensions help a lot
-        self.extensions = {
-            # Strong identity
-            ".qs": SupportedLanguage.QSHARP,
-            ".qsx": SupportedLanguage.QSHARP,
-            ".qsharp": SupportedLanguage.QSHARP,
-
-            ".qasm": SupportedLanguage.OPENQASM,
-
-            # Weak indicator (Python ecosystem)
-            ".py": SupportedLanguage.PYTHON,
-
-            # Optional artificial extensions
-            ".cirq": SupportedLanguage.CIRQ,
-            ".qiskit": SupportedLanguage.QISKIT,
-        }
-
-
     # ---------------------------------------------------------------
     # Main detection
     # ---------------------------------------------------------------
-    def detect(self, code: str, filename: Optional[str] = None) -> Dict[str, any]:
+    def detect(self, code: str) -> Dict[str, any]:
         # 0️⃣ Empty code check
         if not code or not code.strip():
             return self._error("Empty code provided")
 
-        # 1️⃣ Filename extension check
-        if filename:
-            if "." not in filename:
-                return self._error("Filename has no extension; cannot determine language")
-        else:
-            return self._error("Filename is required for language detection")
-
-        # Extract extension
-        ext = filename.split(".")[-1].lower()
-
-        # Map extension → language
-        ext_lang_map = {
-            "py": SupportedLanguage.PYTHON,
-            "qasm": SupportedLanguage.OPENQASM,
-            "qs": SupportedLanguage.QSHARP,
-            "qsx": SupportedLanguage.QSHARP,
-            ".qsharp": SupportedLanguage.QSHARP,
-            "cirq": SupportedLanguage.CIRQ,
-            "qiskit": SupportedLanguage.QISKIT,
-        }
-
-        ext_lang = ext_lang_map.get(ext, None)
-
-        # If extension is not known → error
-        if ext_lang is None:
-            return self._error(f"Unsupported file extension '.{ext}'")
-
-        # 2️⃣ Signature score
         sig_score = self._score_signatures(code)
-
-        # 3️⃣ Token score (for tiny snippets)
         tok_score = self._token_heuristics(code)
 
-        # Final scores combined
-        final_scores = {}
+        def score(lang):
+            return sig_score.get(lang, 0) * 0.70 + tok_score.get(lang, 0) * 0.30
 
-        for lang in SupportedLanguage:
-            if lang == SupportedLanguage.UNKNOWN:
-                continue
-
-            if ext_lang == SupportedLanguage.PYTHON:
-                # .py does NOT decide between Python/Qiskit/Cirq
-                ext_weight = 0.10
-            else:
-                ext_weight = 0.50 if ext_lang == lang else 0.05
-
-            final_scores[lang] = (
-                (1 if ext_lang == lang else 0) * ext_weight +  # extension = strong signal
-                sig_score.get(lang, 0) * 0.40 +
-                tok_score.get(lang, 0) * 0.10
-            )
-
-        detected_lang = max(final_scores, key=final_scores.get)
-        confidence = final_scores[detected_lang]
-
-        # Threshold
-        if confidence < 0.30:
+        # ---------------------------------------------------------------
+        # 1️⃣ OPENQASM (non-Python, must win immediately)
+        # ---------------------------------------------------------------
+        if score(SupportedLanguage.OPENQASM) >= 0.30:
             return {
-                "language": SupportedLanguage.UNKNOWN,
-                "confidence": confidence,
-                "is_supported": False,
-                "details": "Unable to confidently determine language"
+                "language": SupportedLanguage.OPENQASM,
+                "confidence": round(score(SupportedLanguage.OPENQASM), 3),
+                "is_supported": True,
+                "details": "Detected OpenQASM"
             }
 
+        # ---------------------------------------------------------------
+        # 2️⃣ Q# (non-Python, must win immediately)
+        # ---------------------------------------------------------------
+        if score(SupportedLanguage.QSHARP) >= 0.30:
+            return {
+                "language": SupportedLanguage.QSHARP,
+                "confidence": round(score(SupportedLanguage.QSHARP), 3),
+                "is_supported": True,
+                "details": "Detected Q#"
+            }
+
+        # ---------------------------------------------------------------
+        # 3️⃣ CIRQ (Python-based, but dominates Python)
+        # ---------------------------------------------------------------
+        if score(SupportedLanguage.CIRQ) >= 0.30:
+            return {
+                "language": SupportedLanguage.CIRQ,
+                "confidence": round(score(SupportedLanguage.CIRQ), 3),
+                "is_supported": True,
+                "details": "Detected Cirq (Python quantum framework)"
+            }
+
+        # ---------------------------------------------------------------
+        # 4️⃣ QISKIT (Python-based, but dominates Python)
+        # ---------------------------------------------------------------
+        if score(SupportedLanguage.QISKIT) >= 0.30:
+            return {
+                "language": SupportedLanguage.QISKIT,
+                "confidence": round(score(SupportedLanguage.QISKIT), 3),
+                "is_supported": True,
+                "details": "Detected Qiskit (Python quantum framework)"
+            }
+
+        # ---------------------------------------------------------------
+        # 5️⃣ PYTHON (fallback only)
+        # ---------------------------------------------------------------
+        if self._is_python(code):
+            return {
+                "language": SupportedLanguage.PYTHON,
+                "confidence": 0.50,
+                "is_supported": True,
+                "details": "Detected plain Python (no quantum framework)"
+            }
+
+        # ---------------------------------------------------------------
+        # 6️⃣ UNKNOWN
+        # ---------------------------------------------------------------
         return {
-            "language": detected_lang,
-            "confidence": round(confidence, 3),
-            "is_supported": True,
-            "details": "Detected using extension + signature + token heuristics"
+            "language": SupportedLanguage.UNKNOWN,
+            "confidence": 0.0,
+            "is_supported": False,
+            "details": "Unable to confidently determine language"
         }
 
-    # ---------------------------------------------------------------
-    # Extension scoring
-    # ---------------------------------------------------------------
-    def _score_extension(self, filename: Optional[str]):
-        if not filename:
-            return ({}, None)
-
-        for ext, lang in self.extensions.items():
-            if filename.endswith(ext):
-                return ({lang: 1.0}, lang)
-
-        return ({}, None)
 
     # ---------------------------------------------------------------
     # Signature scoring
@@ -312,8 +294,12 @@ class LanguageDetector:
 
             SupportedLanguage.CIRQ: (
                 ("cirq." in lower) +
-                ("linequbit" in lower)
-            ) / 2,
+                ("linequbit" in lower) +
+                ("gridqubit" in lower) +
+                ("namedqubit" in lower) +
+                ("**" in lower and "cirq." in lower) +
+                ("simulator(" in lower)
+            ) / 6,
 
             SupportedLanguage.QSHARP: (
                 ("operation" in lower) +
@@ -365,7 +351,7 @@ qc.h(0)
 qc.cx(0, 1)
     """
     
-    result = detector.detect(qiskit_code, "example.qiskit")
+    result = detector.detect(qiskit_code)
     print(f"Language: {result['language']}")
     print(f"Confidence: {result['confidence']:.2%}")
     print(f"Details: {result['details']}")

@@ -102,6 +102,7 @@ class CodeAnalysisResult(BaseModel):
     
     # Algorithm detection (will be added later)
     detected_algorithms: list = Field(default_factory=list, description="Detected quantum algorithms")
+    algorithm_detection_source: Optional[str] = None
     
     class Config:
         json_schema_extra = {

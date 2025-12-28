@@ -33,7 +33,7 @@ qc.measure([0,1], [0,1])
     
     # Language detection
     detector = LanguageDetector()
-    lang_result = detector.detect(code, "grover.py")
+    lang_result = detector.detect(code)
     print(f"✓ Language: {lang_result['language']} ({lang_result['confidence']:.1%} confidence)")
     
     # Build AST
@@ -69,7 +69,7 @@ circuit = cirq.Circuit(
     """
     
     detector = LanguageDetector()
-    lang_result = detector.detect(code, "bell_state.py")
+    lang_result = detector.detect(code)
     print(f"✓ Language: {lang_result['language']}")
     
     ast_builder = ASTBuilder()
@@ -100,7 +100,7 @@ measure q -> c;
     """
     
     detector = LanguageDetector()
-    lang_result = detector.detect(code, "qft.qasm")
+    lang_result = detector.detect(code)
     print(f"✓ Language: {lang_result['language']}")
     
     ast_builder = ASTBuilder()
@@ -126,7 +126,7 @@ for i in range(10):
     """
     
     detector = LanguageDetector()
-    lang_result = detector.detect(code, "fibonacci.py")
+    lang_result = detector.detect(code)
     print(f"✓ Language: {lang_result['language']}")
     
     analyzer = ComplexityAnalyzer()
