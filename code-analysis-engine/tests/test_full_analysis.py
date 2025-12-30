@@ -49,7 +49,7 @@ qc.measure([0,1], [0,1])
     print(f"✓ Circuit depth: {q_metrics.circuit_depth}")
     print(f"✓ Superposition score: {q_metrics.superposition_score}")
     print(f"✓ Entanglement score: {q_metrics.entanglement_score}")
-    print(f"✓ Quantum volume: {q_metrics.quantum_volume}")
+    print(f"✓ Quantum volume: {q_metrics.logical_circuit_volume or 'N/A'}")
 
 def test_cirq_bell_state():
     """Test Bell state (Cirq)"""

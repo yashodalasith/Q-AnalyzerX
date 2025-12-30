@@ -8,7 +8,8 @@ from typing import Optional
 import uvicorn
 
 # Import modules
-from modules.language_detector import LanguageDetector, SupportedLanguage
+from modules.language_detector import SupportedLanguage
+from modules.ml_language_classifier import MLLanguageClassifier, ContinuousLearningManager
 from modules.ast_builder import ASTBuilder
 from modules.complexity_analyzer import ComplexityAnalyzer
 from modules.quantum_analyzer import QuantumAnalyzer
@@ -23,7 +24,8 @@ app = FastAPI(
 )
 
 # Initialize components
-language_detector = LanguageDetector()
+ml_language_classifier = MLLanguageClassifier()
+learning_manager = ContinuousLearningManager()
 ast_builder = ASTBuilder()
 complexity_analyzer = ComplexityAnalyzer()
 quantum_analyzer = QuantumAnalyzer()
@@ -64,7 +66,7 @@ async def health_check():
 async def detect_language(submission: CodeSubmission):
     """Detect programming language"""
     try:
-        result = language_detector.detect(code=submission.code)
+        result = ml_language_classifier.detect(code=submission.code)
         return LanguageDetectionResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -79,7 +81,7 @@ async def analyze_code(submission: CodeSubmission):
         code = submission.code
         
         # Step 1: Detect language
-        lang_result = language_detector.detect(code=code)
+        lang_result = ml_language_classifier.detect(code=code)
         
         if not lang_result["is_supported"]:
             raise HTTPException(
@@ -184,8 +186,25 @@ async def get_supported_languages():
         "count": 5
     }
 
-# Helper Functions
+# Continuous learning endpoints
+@app.post("/feedback")
+async def submit_feedback(
+    code: str,
+    predicted: str,
+    actual: str,
+    confidence: float
+):
+    """Submit feedback for continuous learning"""
+    learning_manager.collect_feedback(code, predicted, actual, confidence)
+    return {"status": "feedback_received", "message": "Thank you for your feedback!"}
 
+@app.post("/admin/retrain")
+async def trigger_retrain():
+    """Manually trigger model retraining (admin only)"""
+    learning_manager._trigger_retraining()
+    return {"status": "retraining_started"}
+
+# Helper Functions
 def determine_problem_type_heuristic(code: str, is_quantum: bool = False) -> ProblemType:
     """
     Fallback heuristic-based problem type classification

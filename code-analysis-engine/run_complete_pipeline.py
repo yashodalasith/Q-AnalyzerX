@@ -49,6 +49,11 @@ def run_complete_pipeline(
     
     if regenerate_dataset:
         print("\n📊 STEP 1: GENERATING DATASET")
+        print("=" * 80)
+        print(f"Target: {variations_per_algo} variations × 10 algorithms × 4 languages")
+        print(f"Total codes to generate: {variations_per_algo * 10 * 4:,}")
+        print()
+        
         dataset_start = time.time()
         
         generator = QuantumAlgorithmDatasetGenerator()
@@ -76,7 +81,7 @@ def run_complete_pipeline(
     X, y = pipeline.prepare_dataset()
     
     # Train models
-    print("\n[2/3] Training Random Forest + Gradient Boosting...")
+    print("\n[2/3] Training Random Forest + Gradient Boosting + XG Boost...")
     pipeline.train_models(X, y, test_size=0.2)
     
     # Evaluate
@@ -125,6 +130,18 @@ def run_complete_pipeline(
     print(f"      ├─ Recall: {metrics['gradient_boosting']['recall']:.4f}")
     print(f"      └─ F1 Score: {metrics['gradient_boosting']['f1']:.4f}")
     print()
+    print(f"   XGBoost:")
+    print(f"      ├─ Accuracy: {metrics['xgboost']['accuracy']:.4f} ({metrics['xgboost']['accuracy']*100:.2f}%)")
+    print(f"      ├─ Precision: {metrics['xgboost']['precision']:.4f}")
+    print(f"      ├─ Recall: {metrics['xgboost']['recall']:.4f}")
+    print(f"      └─ F1 Score: {metrics['xgboost']['f1']:.4f}")
+    print()
+    print(f"   Ensemble (RF+GB+XGB):")
+    print(f"      ├─ Accuracy: {metrics['ensemble']['accuracy']:.4f} ({metrics['ensemble']['accuracy']*100:.2f}%)")
+    print(f"      ├─ Precision: {metrics['ensemble']['precision']:.4f}")
+    print(f"      ├─ Recall: {metrics['ensemble']['recall']:.4f}")
+    print(f"      └─ F1 Score: {metrics['ensemble']['f1']:.4f}")
+    print()
     
     print("⏱️  PERFORMANCE")
     if regenerate_dataset:
@@ -138,14 +155,14 @@ def run_complete_pipeline(
     print(f"   Models: models/trained/")
     print(f"   ├─ random_forest.pkl")
     print(f"   ├─ gradient_boosting.pkl")
+    print(f"   ├─ xgboost.pkl")
     print(f"   ├─ scaler.pkl")
     print(f"   ├─ label_encoder.pkl")
     print(f"   └─ confusion_matrices.png")
     print()
     
     # Determine if models are production-ready
-    avg_accuracy = (metrics['random_forest']['accuracy'] + 
-                   metrics['gradient_boosting']['accuracy']) / 2
+    avg_accuracy = metrics['ensemble']['accuracy']
     
     if avg_accuracy >= 0.95:
         status = "🎉 EXCELLENT"

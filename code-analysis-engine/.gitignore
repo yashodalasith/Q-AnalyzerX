@@ -14,6 +14,7 @@ __pycache__/
 # ----------------------------
 venv/
 .env/
+.env
 .envrc
 .venv/
 pip-wheel-metadata/
@@ -71,7 +72,9 @@ Thumbs.db
 #  Datasets / Models
 # ----------------------------
 quantum_algorithms/
+language_classification/
 trained/
+language_classifier/
 
 # ----------------------------
 #  Optional: model / data files

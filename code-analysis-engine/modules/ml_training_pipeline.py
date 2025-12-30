@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 from sklearn.model_selection import train_test_split, cross_val_score, learning_curve
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import (
     accuracy_score, precision_recall_fscore_support,
@@ -52,6 +53,7 @@ class QuantumAlgorithmMLPipeline:
         # Models
         self.random_forest = None
         self.gradient_boosting = None
+        self.xgboost = None
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
         
@@ -109,7 +111,7 @@ class QuantumAlgorithmMLPipeline:
             features.append(quantum_metrics.cx_gate_ratio)
             features.append(quantum_metrics.superposition_score)  # ACCURATE (simulated)
             features.append(quantum_metrics.entanglement_score)  # ACCURATE (simulated)
-            features.append(quantum_metrics.quantum_volume or 0)
+            features.append(quantum_metrics.logical_circuit_volume or 0)
             
             # Boolean features (converted to int)
             features.append(int(quantum_metrics.has_superposition))
@@ -207,7 +209,7 @@ class QuantumAlgorithmMLPipeline:
         # Define feature names
         self.feature_names = [
             'qubits', 'total_gates', 'single_qubit_gates', 'two_qubit_gates', 'cx_gates',
-            'circuit_depth', 'cx_ratio', 'superposition_score', 'entanglement_score', 'quantum_volume',
+            'circuit_depth', 'cx_ratio', 'superposition_score', 'entanglement_score', 'logical_circuit_volume',
             'has_superposition', 'has_entanglement', 'has_measurement',
             'h_gates', 'x_gates', 'y_gates', 'z_gates', 's_gates', 't_gates',
             'rx_gates', 'ry_gates', 'rz_gates', 'cnot_gates', 'cx_gates_2', 'cz_gates', 'swap_gates', 'toffoli_gates',
@@ -226,7 +228,7 @@ class QuantumAlgorithmMLPipeline:
     
     def train_models(self, X: pd.DataFrame, y: pd.Series, test_size: float = 0.2):
         """
-        Train Random Forest and Gradient Boosting models
+        Train Random Forest, Gradient Boosting, AND XGBoost
         """
         
         print("\n" + "=" * 80)
@@ -252,13 +254,16 @@ class QuantumAlgorithmMLPipeline:
         # ===== RANDOM FOREST =====
         print("🌲 Training Random Forest...")
         self.random_forest = RandomForestClassifier(
-            n_estimators=200,
-            max_depth=20,
-            min_samples_split=5,
-            min_samples_leaf=2,
-            random_state=42,
+            n_estimators=300,
+            max_depth=25,              # Different from others
+            min_samples_split=2,       # More aggressive splits
+            min_samples_leaf=1,        # Allow pure leaves
+            max_features='sqrt',       # Feature subsampling
+            bootstrap=True,            # Bootstrap sampling
+            random_state=100,          # DIFFERENT random state
             n_jobs=-1,
-            verbose=1
+            verbose=0,
+            class_weight='balanced'
         )
         
         self.random_forest.fit(self.X_train_scaled, self.y_train)
@@ -276,14 +281,15 @@ class QuantumAlgorithmMLPipeline:
         # ===== GRADIENT BOOSTING =====
         print("🚀 Training Gradient Boosting...")
         self.gradient_boosting = GradientBoostingClassifier(
-            n_estimators=200,
-            learning_rate=0.1,
-            max_depth=5,
-            min_samples_split=5,
-            min_samples_leaf=2,
-            subsample=0.8,
-            random_state=42,
-            verbose=1
+            n_estimators=200,          # Fewer trees (different strategy)
+            learning_rate=0.05,        # Slower learning (more conservative)
+            max_depth=6,               # Different depth
+            min_samples_split=10,      # More conservative splits
+            min_samples_leaf=4,        # Larger leaves
+            subsample=0.7,             # Different subsampling
+            max_features='log2',       # Different feature selection
+            random_state=200,          # DIFFERENT random state
+            verbose=0
         )
         
         self.gradient_boosting.fit(self.X_train_scaled, self.y_train)
@@ -297,10 +303,42 @@ class QuantumAlgorithmMLPipeline:
         print(f"✅ Gradient Boosting trained!")
         print(f"   Cross-validation accuracy: {cv_scores_gb.mean():.4f} (+/- {cv_scores_gb.std():.4f})")
         print("=" * 80)
+
+        # ===== XGBOOST =====
+        print("🚀 Training XGBoost...")
+        self.xgboost = XGBClassifier(
+            n_estimators=250,          # Different number
+            max_depth=8,               # Different depth
+            learning_rate=0.1,         # Different learning rate
+            subsample=0.85,            # Different subsampling
+            colsample_bytree=0.85,     # Column subsampling
+            colsample_bylevel=0.7,     # Level-wise column subsampling
+            gamma=0.5,                 # Min split loss
+            min_child_weight=3,        # Different min child weight
+            reg_alpha=0.05,            # L1 regularization
+            reg_lambda=2.0,            # L2 regularization
+            random_state=300,          # DIFFERENT random state
+            use_label_encoder=False,
+            eval_metric='mlogloss',
+            verbosity=0,
+            n_jobs=-1
+        )
+        
+        self.xgboost.fit(self.X_train_scaled, self.y_train)
+        
+        # Cross-validation
+        cv_scores_xgb = cross_val_score(
+            self.xgboost, self.X_train_scaled, self.y_train,
+            cv=5, scoring='accuracy'
+        )
+        
+        print(f"✅ XGBoost trained!")
+        print(f"   CV accuracy: {cv_scores_xgb.mean():.4f} (+/- {cv_scores_xgb.std():.4f})")
+        print("=" * 80)
     
     def evaluate_models(self):
         """
-        Evaluate both models and generate detailed reports
+        Evaluate all THREE models (RF, GB, XGB) + ensemble
         """
         
         print("\n" + "=" * 80)
@@ -310,26 +348,29 @@ class QuantumAlgorithmMLPipeline:
         # Predictions
         y_pred_rf = self.random_forest.predict(self.X_test_scaled)
         y_pred_gb = self.gradient_boosting.predict(self.X_test_scaled)
-
-        # AGREEMENT CHECK
-        agreement = np.mean(y_pred_rf == y_pred_gb)
-        print(f"Model agreement (fraction predictions identical): {agreement:.4f}")
-
-        # PROBABILITY DISTANCE (avg L1 between predicted prob vectors)
-        proba_rf = self.random_forest.predict_proba(self.X_test_scaled)
-        proba_gb = self.gradient_boosting.predict_proba(self.X_test_scaled)
-        avg_proba_l1 = np.mean(np.abs(proba_rf - proba_gb).sum(axis=1))
-        print(f"Avg L1 distance between RF and GB predicted-prob vectors: {avg_proba_l1:.6f}")
-
-
-        # ===== TRAINING SET EVALUATION =====
+        y_pred_xgb = self.xgboost.predict(self.X_test_scaled) 
         y_train_pred_rf = self.random_forest.predict(self.X_train_scaled)
         y_train_pred_gb = self.gradient_boosting.predict(self.X_train_scaled)
+        y_train_pred_xgb = self.xgboost.predict(self.X_train_scaled)
+
+        # Probabilities
+        y_proba_rf = self.random_forest.predict_proba(self.X_test_scaled)
+        y_proba_gb = self.gradient_boosting.predict_proba(self.X_test_scaled)
+        y_proba_xgb = self.xgboost.predict_proba(self.X_test_scaled)
+        y_train_proba_rf = self.random_forest.predict_proba(self.X_train_scaled)
+        y_train_proba_gb = self.gradient_boosting.predict_proba(self.X_train_scaled)
+        y_train_proba_xgb = self.xgboost.predict_proba(self.X_train_scaled)
+        
+        proba_ensemble = (y_proba_rf + y_proba_gb + y_proba_xgb) / 3
+        y_pred_ensemble = np.argmax(proba_ensemble, axis=1)
+        avg_train_proba = (y_train_proba_rf + y_train_proba_gb + y_train_proba_xgb) / 3
+        y_train_pred_ensemble = np.argmax(avg_train_proba, axis=1)
         
         # Decode labels
         y_test_labels = self.label_encoder.inverse_transform(self.y_test)
         y_pred_rf_labels = self.label_encoder.inverse_transform(y_pred_rf)
         y_pred_gb_labels = self.label_encoder.inverse_transform(y_pred_gb)
+        y_pred_xgb_labels = self.label_encoder.inverse_transform(y_pred_xgb)
         
         # ===== RANDOM FOREST EVALUATION =====
         print("\n🌲 RANDOM FOREST")
@@ -337,9 +378,9 @@ class QuantumAlgorithmMLPipeline:
         
         accuracy_rf = accuracy_score(self.y_test, y_pred_rf)
         train_accuracy_rf = accuracy_score(self.y_train, y_train_pred_rf)
-        print(f"Accuracy: {accuracy_rf:.4f} ({accuracy_rf * 100:.2f}%)")
         print("\n📈 TRAINING ACCURACY")
         print(f"Random Forest Train Accuracy: {train_accuracy_rf:.4f}")
+        print(f"Accuracy: {accuracy_rf:.4f} ({accuracy_rf * 100:.2f}%)")
         
         precision_rf, recall_rf, f1_rf, _ = precision_recall_fscore_support(
             self.y_test, y_pred_rf, average='weighted'
@@ -363,9 +404,9 @@ class QuantumAlgorithmMLPipeline:
         
         accuracy_gb = accuracy_score(self.y_test, y_pred_gb)
         train_accuracy_gb = accuracy_score(self.y_train, y_train_pred_gb)
-        print(f"Accuracy: {accuracy_gb:.4f} ({accuracy_gb * 100:.2f}%)")
         print("\n📈 TRAINING ACCURACY")
         print(f"Gradient Boosting Train Accuracy: {train_accuracy_gb:.4f}")
+        print(f"Accuracy: {accuracy_gb:.4f} ({accuracy_gb * 100:.2f}%)")
         
         precision_gb, recall_gb, f1_gb, _ = precision_recall_fscore_support(
             self.y_test, y_pred_gb, average='weighted'
@@ -384,6 +425,82 @@ class QuantumAlgorithmMLPipeline:
         with open(self.models_dir / 'classification_report_gb.json', 'w') as f:
             json.dump(gb_report, f, indent=2)
 
+        # ===== XGBOOST EVALUATION =====
+        print("\n🔥 XGBOOST")
+        print("-" * 80)
+        accuracy_xgb = accuracy_score(self.y_test, y_pred_xgb)
+        train_accuracy_xgb = accuracy_score(self.y_train, y_train_pred_xgb)
+        print("\n📈 TRAINING ACCURACY")
+        print(f"XGBoost Train Accuracy: {train_accuracy_xgb:.4f}")
+        print(f"Accuracy: {accuracy_xgb:.4f} ({accuracy_xgb * 100:.2f}%)")
+
+        precision_xgb, recall_xgb, f1_xgb, _ = precision_recall_fscore_support(
+            self.y_test, y_pred_xgb, average='weighted'
+        )
+        print(f"Precision: {precision_xgb:.4f}")
+        print(f"Recall: {recall_xgb:.4f}")
+        print(f"F1 Score: {f1_xgb:.4f}")
+        
+        print("\nClassification Report:")
+        print(classification_report(y_test_labels, y_pred_xgb_labels))
+
+        xgb_report = classification_report(
+            y_test_labels, y_pred_xgb_labels, output_dict=True
+        )
+
+        with open(self.models_dir / 'classification_report_xgb.json', 'w') as f:
+            json.dump(xgb_report, f, indent=2)
+
+        # ===== 4. ENSEMBLE (RF + GB + XGB) =====
+        print("\n⚖️  ENSEMBLE (RF + GB + XGB)")
+        print("-" * 80)
+        
+        # Weighted ensemble (optimized weights)
+        # RF is best at avoiding overfitting
+        # GB is best at complex patterns
+        # XGB is best at boosting weak learners
+        y_proba_ensemble = (
+            0.35 * y_proba_rf +      # Random Forest weight
+            0.30 * y_proba_gb +      # Gradient Boosting weight
+            0.35 * y_proba_xgb       # XGBoost weight
+        )
+        
+        y_pred_ensemble = np.argmax(y_proba_ensemble, axis=1)
+        y_pred_ensemble_labels = self.label_encoder.inverse_transform(y_pred_ensemble)
+        
+        accuracy_ensemble = accuracy_score(self.y_test, y_pred_ensemble)
+        print(f"Accuracy: {accuracy_ensemble:.4f} ({accuracy_ensemble * 100:.2f}%)")
+        
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            self.y_test, y_pred_ensemble, average='weighted'
+        )
+        print(f"Precision: {precision:.4f}")
+        print(f"Recall: {recall:.4f}")
+        print(f"F1 Score: {f1:.4f}")
+        
+        print("\nEnsemble Classification Report:")
+        print(classification_report(y_test_labels, y_pred_ensemble_labels))
+
+        ens_report = classification_report(y_test_labels, y_pred_ensemble_labels, output_dict=True)
+        with open(self.models_dir / 'classification_report_ens.json', 'w') as f:
+            json.dump(ens_report, f, indent=2)
+        
+        # ===== COMPARISON TABLE =====
+        print("\n" + "=" * 80)
+        print("ACCURACY COMPARISON")
+        print("=" * 80)
+        print(f"{'Model':<25} {'Accuracy':<15} {'Improvement':<15}")
+        print("-" * 80)
+        print(f"{'Random Forest':<25} {accuracy_rf:<15.4f} {'-':<15}")
+        print(f"{'Gradient Boosting':<25} {accuracy_gb:<15.4f} {'-':<15}")
+        print(f"{'XGBoost':<25} {accuracy_xgb:<15.4f} {'-':<15}")
+        
+        avg_individual = (accuracy_rf + accuracy_gb + accuracy_xgb) / 3
+        improvement = accuracy_ensemble - avg_individual
+        
+        print(f"{'Ensemble (RF+GB+XGB)':<25} {accuracy_ensemble:<15.4f} {f'+{improvement:.4f}':<15}")
+        print("=" * 80)
+
         # ===== FEATURE IMPORTANCE =====
         print("\n📊 FEATURE IMPORTANCE (Top 10)")
         print("-" * 80)
@@ -395,40 +512,48 @@ class QuantumAlgorithmMLPipeline:
             print(f"{i+1}. {self.feature_names[idx]}: {importances[idx]:.4f}")
         
         # ===== CONFUSION MATRICES =====
-        self._plot_confusion_matrices(y_test_labels, y_pred_rf_labels, y_pred_gb_labels)
+        self._plot_confusion_matrices(self.y_test, y_pred_rf, y_pred_gb, y_pred_ensemble, y_pred_xgb)
         self._plot_train_confusion_matrices(
-            self.y_train, y_train_pred_rf, y_train_pred_gb
+            self.y_train, y_train_pred_rf, y_train_pred_gb, y_train_pred_ensemble, y_train_pred_xgb
         )
 
         # ===== LEARNING CURVES =====
         self._plot_learning_curve(self.random_forest, 'random_forest')
         self._plot_learning_curve(self.gradient_boosting, 'gradient_boosting')
+        self._plot_learning_curve(self.xgboost, 'xgboost')
 
         # ===== CONFIDENCE CALIBRATION =====
-        proba_rf = self.random_forest.predict_proba(self.X_test_scaled)
-        confidences = np.max(proba_rf, axis=1)
-        correct = (y_pred_rf == self.y_test).astype(int)
+        self._plot_confidence_calibration(
+            self.y_test,
+            y_pred_rf,
+            y_proba_rf,
+            model_name='Random Forest',
+            filename='calibration_rf.png'
+        )
 
-        bins = np.linspace(0, 1, 11)
-        bin_acc = []
+        self._plot_confidence_calibration(
+            self.y_test,
+            y_pred_gb,
+            y_proba_gb,
+            model_name='Gradient Boosting',
+            filename='calibration_gb.png'
+        )
 
-        for i in range(len(bins) - 1):
-            mask = (confidences >= bins[i]) & (confidences < bins[i + 1])
-            if mask.any():
-                bin_acc.append(correct[mask].mean())
-            else:
-                bin_acc.append(np.nan)
+        self._plot_confidence_calibration(
+            self.y_test,
+            y_pred_xgb,
+            y_proba_xgb,
+            model_name='XGBoost',
+            filename='calibration_xgb.png'
+        )
 
-        plt.figure(figsize=(8, 6))
-        plt.plot(bins[:-1], bin_acc, marker='o')
-        plt.plot([0, 1], [0, 1], '--', color='gray')
-        plt.xlabel('Predicted Confidence')
-        plt.ylabel('Empirical Accuracy')
-        plt.title('Confidence Calibration (Random Forest)')
-        plt.grid(True)
-
-        plt.savefig(self.models_dir / 'confidence_calibration.png', dpi=300)
-        plt.close()
+        self._plot_confidence_calibration(
+            self.y_test,
+            y_pred_ensemble,
+            proba_ensemble,
+            model_name='Ensemble',
+            filename='calibration_ensemble.png'
+        )
 
         # ===== DATA SLICE EVALUATION =====
         gate_counts = self.X_test['total_gates'].values
@@ -462,19 +587,31 @@ class QuantumAlgorithmMLPipeline:
                 'precision': precision_gb,
                 'recall': recall_gb,
                 'f1': f1_gb
+            },
+            'xgboost': {                    
+                'accuracy': accuracy_xgb,
+                'precision': precision_xgb,
+                'recall': recall_xgb,
+                'f1': f1_xgb
+            },
+            'ensemble': {                    
+                'accuracy': accuracy_ensemble,
+                'precision': precision,
+                'recall': recall,
+                'f1': f1
             }
         }
     
-    def _plot_confusion_matrices(self, y_true, y_pred_rf, y_pred_gb):
-        """Plot confusion matrices for both models"""
+    def _plot_confusion_matrices(self, y_true, y_pred_rf, y_pred_gb, y_pred_ensemble, y_pred_xgb):
+        """Plot confusion matrices for Random Forest, Gradient Boosting, Ensemble, and XGBoost models"""
         
-        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+        fig, axes = plt.subplots(1, 4, figsize=(24, 6))  # 4 subplots now, one for each model
         
         # Random Forest
         cm_rf = confusion_matrix(y_true, y_pred_rf)
         sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues', ax=axes[0],
-                   xticklabels=self.label_encoder.classes_,
-                   yticklabels=self.label_encoder.classes_)
+                xticklabels=self.label_encoder.classes_,
+                yticklabels=self.label_encoder.classes_)
         axes[0].set_title('Random Forest - Confusion Matrix')
         axes[0].set_ylabel('True Label')
         axes[0].set_xlabel('Predicted Label')
@@ -482,33 +619,130 @@ class QuantumAlgorithmMLPipeline:
         # Gradient Boosting
         cm_gb = confusion_matrix(y_true, y_pred_gb)
         sns.heatmap(cm_gb, annot=True, fmt='d', cmap='Greens', ax=axes[1],
-                   xticklabels=self.label_encoder.classes_,
-                   yticklabels=self.label_encoder.classes_)
+                xticklabels=self.label_encoder.classes_,
+                yticklabels=self.label_encoder.classes_)
         axes[1].set_title('Gradient Boosting - Confusion Matrix')
         axes[1].set_ylabel('True Label')
         axes[1].set_xlabel('Predicted Label')
-        
+
+        # Ensemble Model
+        cm_ensemble = confusion_matrix(y_true, y_pred_ensemble)
+        sns.heatmap(cm_ensemble, annot=True, fmt='d', cmap='Purples', ax=axes[2],
+                xticklabels=self.label_encoder.classes_,
+                yticklabels=self.label_encoder.classes_)
+        axes[2].set_title('Ensemble Model - Confusion Matrix')
+        axes[2].set_ylabel('True Label')
+        axes[2].set_xlabel('Predicted Label')
+
+        # XGBoost
+        cm_xgb = confusion_matrix(y_true, y_pred_xgb)
+        sns.heatmap(cm_xgb, annot=True, fmt='d', cmap='Oranges', ax=axes[3],
+                xticklabels=self.label_encoder.classes_,
+                yticklabels=self.label_encoder.classes_)
+        axes[3].set_title('XGBoost - Confusion Matrix')
+        axes[3].set_ylabel('True Label')
+        axes[3].set_xlabel('Predicted Label')
+
         plt.tight_layout()
-        plt.savefig(self.models_dir / 'confusion_matrices.png', dpi=300, bbox_inches='tight')
-        print(f"\n📊 Confusion matrices saved to: {self.models_dir / 'confusion_matrices.png'}")
+        plt.savefig(self.models_dir / 'confusion_matrices_all_models.png', dpi=300, bbox_inches='tight')
+        print(f"\n📊 Confusion matrices saved to: {self.models_dir / 'confusion_matrices_all_models.png'}")
 
-    def _plot_train_confusion_matrices(self, y_train_true, y_train_pred_rf, y_train_pred_gb):
-        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    def _plot_train_confusion_matrices(
+        self,
+        y_train_true,
+        y_train_pred_rf,
+        y_train_pred_gb,
+        y_train_pred_ensemble,
+        y_train_pred_xgb
+    ):
+        """Plot TRAIN confusion matrices for all models"""
 
+        fig, axes = plt.subplots(1, 4, figsize=(24, 6))
+
+        # Random Forest
         cm_rf = confusion_matrix(y_train_true, y_train_pred_rf)
-        sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues', ax=axes[0],
-                    xticklabels=self.label_encoder.classes_,
-                    yticklabels=self.label_encoder.classes_)
-        axes[0].set_title('Random Forest - TRAIN Confusion Matrix')
+        sns.heatmap(
+            cm_rf, annot=True, fmt='d', cmap='Blues', ax=axes[0],
+            xticklabels=self.label_encoder.classes_,
+            yticklabels=self.label_encoder.classes_
+        )
+        axes[0].set_title('Random Forest - TRAIN')
+        axes[0].set_ylabel('True Label')
+        axes[0].set_xlabel('Predicted Label')
 
+        # Gradient Boosting
         cm_gb = confusion_matrix(y_train_true, y_train_pred_gb)
-        sns.heatmap(cm_gb, annot=True, fmt='d', cmap='Greens', ax=axes[1],
-                    xticklabels=self.label_encoder.classes_,
-                    yticklabels=self.label_encoder.classes_)
-        axes[1].set_title('Gradient Boosting - TRAIN Confusion Matrix')
+        sns.heatmap(
+            cm_gb, annot=True, fmt='d', cmap='Greens', ax=axes[1],
+            xticklabels=self.label_encoder.classes_,
+            yticklabels=self.label_encoder.classes_
+        )
+        axes[1].set_title('Gradient Boosting - TRAIN')
+        axes[1].set_ylabel('True Label')
+        axes[1].set_xlabel('Predicted Label')
+
+        # Ensemble
+        cm_ensemble = confusion_matrix(y_train_true, y_train_pred_ensemble)
+        sns.heatmap(
+            cm_ensemble, annot=True, fmt='d', cmap='Purples', ax=axes[2],
+            xticklabels=self.label_encoder.classes_,
+            yticklabels=self.label_encoder.classes_
+        )
+        axes[2].set_title('Ensemble - TRAIN')
+        axes[2].set_ylabel('True Label')
+        axes[2].set_xlabel('Predicted Label')
+
+        # XGBoost
+        cm_xgb = confusion_matrix(y_train_true, y_train_pred_xgb)
+        sns.heatmap(
+            cm_xgb, annot=True, fmt='d', cmap='Oranges', ax=axes[3],
+            xticklabels=self.label_encoder.classes_,
+            yticklabels=self.label_encoder.classes_
+        )
+        axes[3].set_title('XGBoost - TRAIN')
+        axes[3].set_ylabel('True Label')
+        axes[3].set_xlabel('Predicted Label')
 
         plt.tight_layout()
-        plt.savefig(self.models_dir / 'train_confusion_matrices.png', dpi=300)
+        plt.savefig(
+            self.models_dir / 'train_confusion_matrices_all_models.png',
+            dpi=300,
+            bbox_inches='tight'
+        )
+
+        print(
+            f"\n📊 Train confusion matrices saved to: "
+            f"{self.models_dir / 'train_confusion_matrices_all_models.png'}"
+        )
+    
+    def _plot_confidence_calibration(self, y_true, y_pred, y_proba, model_name, filename):
+        """Plot confidence calibration curve for a model"""
+
+        confidences = np.max(y_proba, axis=1)
+        correct = (y_pred == y_true).astype(int)
+
+        bins = np.linspace(0, 1, 11)
+        bin_acc = []
+
+        for i in range(len(bins) - 1):
+            mask = (confidences >= bins[i]) & (confidences < bins[i + 1])
+            if mask.any():
+                bin_acc.append(correct[mask].mean())
+            else:
+                bin_acc.append(np.nan)
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(bins[:-1], bin_acc, marker='o', label=model_name)
+        plt.plot([0, 1], [0, 1], '--', color='gray', label='Perfect Calibration')
+        plt.xlabel('Predicted Confidence')
+        plt.ylabel('Empirical Accuracy')
+        plt.title(f'Confidence Calibration ({model_name})')
+        plt.legend()
+        plt.grid(True)
+
+        plt.savefig(self.models_dir / filename, dpi=300, bbox_inches='tight')
+        plt.close()
+
 
     def _plot_learning_curve(self, model, model_name):
         train_sizes, train_scores, val_scores = learning_curve(
@@ -544,6 +778,7 @@ class QuantumAlgorithmMLPipeline:
         # Save models
         joblib.dump(self.random_forest, self.models_dir / 'random_forest.pkl')
         joblib.dump(self.gradient_boosting, self.models_dir / 'gradient_boosting.pkl')
+        joblib.dump(self.xgboost, self.models_dir / 'xgboost.pkl')
         joblib.dump(self.scaler, self.models_dir / 'scaler.pkl')
         joblib.dump(self.label_encoder, self.models_dir / 'label_encoder.pkl')
         
@@ -558,6 +793,7 @@ class QuantumAlgorithmMLPipeline:
         
         self.random_forest = joblib.load(self.models_dir / 'random_forest.pkl')
         self.gradient_boosting = joblib.load(self.models_dir / 'gradient_boosting.pkl')
+        self.xgboost = joblib.load(self.models_dir / 'xgboost.pkl')
         self.scaler = joblib.load(self.models_dir / 'scaler.pkl')
         self.label_encoder = joblib.load(self.models_dir / 'label_encoder.pkl')
         
@@ -573,7 +809,7 @@ class QuantumAlgorithmMLPipeline:
         Args:
             code: Source code
             language: Programming language
-            use_ensemble: If True, average predictions from both models
+            use_ensemble: If True, average predictions from all models
         """
         
         # Extract features
@@ -584,16 +820,22 @@ class QuantumAlgorithmMLPipeline:
             # Ensemble prediction (average probabilities)
             proba_rf = self.random_forest.predict_proba(features_scaled)[0]
             proba_gb = self.gradient_boosting.predict_proba(features_scaled)[0]
+            proba_xgb = self.xgboost.predict_proba(features_scaled)[0]
             
-            proba_ensemble = (proba_rf + proba_gb) / 2
+            # Weighted ensemble
+            proba_ensemble = (
+                0.35 * proba_rf +
+                0.30 * proba_gb +
+                0.35 * proba_xgb
+            )
             prediction = self.label_encoder.classes_[np.argmax(proba_ensemble)]
             confidence = np.max(proba_ensemble)
             
         else:
-            # Use Random Forest only
-            prediction = self.random_forest.predict(features_scaled)[0]
+             # Use XGBoost only (best single model)
+            prediction = self.xgboost.predict(features_scaled)[0]
             prediction = self.label_encoder.inverse_transform([prediction])[0]
-            confidence = np.max(self.random_forest.predict_proba(features_scaled)[0])
+            confidence = np.max(self.xgboost.predict_proba(features_scaled)[0])
         
         return {
             'algorithm': prediction,
@@ -625,4 +867,6 @@ if __name__ == "__main__":
     print("=" * 80)
     print(f"Random Forest Accuracy: {metrics['random_forest']['accuracy']:.2%}")
     print(f"Gradient Boosting Accuracy: {metrics['gradient_boosting']['accuracy']:.2%}")
+    print(f"XGBoost Accuracy: {metrics['xgboost']['accuracy']:.2%}")
+    print(f"Ensemble Accuracy: {metrics['ensemble']['accuracy']:.2%}")
     print("=" * 80)
