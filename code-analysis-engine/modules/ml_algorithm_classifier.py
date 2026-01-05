@@ -1,6 +1,6 @@
 """
 ML Model Integration Module
-Use trained Random Forest + Gradient Boosting models in main API
+Use trained Random Forest + Gradient Boosting + XG Boost models in main API
 
 Add this to modules/ml_algorithm_classifier.py
 """

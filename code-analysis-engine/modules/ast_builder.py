@@ -67,6 +67,29 @@ class ASTBuilder:
         
         return unified_ast
     
+    def to_ir(self) -> Dict[str, Any]:
+        return {
+            "source_language": self.source_language,
+            "qubits": self.total_qubits,
+            "classical_bits": self.total_classical_bits,
+            "operations": [
+                {
+                    "gate": g.name,
+                    "targets": g.targets,
+                    "controls": g.controls,
+                    "params": g.params
+                }
+                for g in self.gates
+            ],
+            "measurements": [
+                {
+                    "qubit": m.qubit,
+                    "classical_bit": m.classical_bit
+                }
+                for m in self.measurements
+            ]
+        }
+    
     def get_metadata(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metadata from parsed data"""
         metadata = parsed_data.get('metadata', {})
